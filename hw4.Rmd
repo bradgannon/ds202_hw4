@@ -5,26 +5,99 @@ date: 3/4/2019
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r, include=FALSE}
+# load data
+library("datasets")
+library("tidyverse")
 ```
 
-## R Markdown
+##1.
+```{r}
+data <- ChickWeight # 'data' is an easier name
+weight0 <- data %>% group_by(Diet) %>% summarise(NumChicks = n()%/%12, AvgWeight = mean(weight), WeightStDev = sd(weight))
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+head(weight0)
 ```
 
-## Including Plots
+##2.
+```{r}
+temp <- data %>% group_by(Chick) %>% mutate(NumMeasures = n())
+head(temp, 5) # to get an idea of what the data looks like
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+complete <- temp[temp$NumMeasures == 12,] # if 12 measurements, the data is complete
+complete <- complete %>% select(weight:Diet) # do not need the 'NumMeasures' column, it was just a helper column
+head(complete, 3) # show first 3 rows of 'complete'
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+##3.
+```{r}
+complete <- complete %>% group_by(Chick) %>% mutate(weightgain = (weight - weight[Time == 0]))
+head(complete, 3)
+```
+
+##4.
+```{r}
+day21 <- complete[complete$Time == 21,] # subset the data by Time == 21
+p <- ggplot(day21, aes(x=reorder(Diet, weightgain, FUN = median), y=weightgain)) + geom_boxplot() + expand_limits(y=0)
+p <- p + xlab("Diet") + ylab("Weight Gain (Day 21)") + ggtitle("Weight Gain by Diet (Ordered by Median Weight Gain)")
+p <- p + theme(plot.title = element_text(hjust=0.5))
+
+p # display graph
+```
+You can see here that Diet 3 had the highest median weight gain, while Diet 1 had the lowest median weight gain. I think it is interesting to look at Diet 4, as the bottom tail is very short, which is kind of unusual when looking at the rest of the data. The range of Diet 3 extends below the range of Diet 4, however Diet 3 also has the highest range.
+
+##5.
+```{r}
+# using day21 dataframe again
+
+# numerical summary
+most <- day21 %>% arrange(desc(weight))
+least <- day21 %>% arrange(weight)
+
+head(most, 1) # Chick 35 gained most weight on Diet 3
+head(least, 1) # Chick 24 gained least weight on Diet 2
+
+# graphical summary
+day21$Chick = as.numeric(levels(day21$Chick))[day21$Chick] # change factor to numeric
+p <- ggplot(day21, aes(x=Chick, y=weight)) + geom_point() + scale_x_continuous(breaks = seq(0,50,by = 2)) + expand_limits(y=50)
+p <- p + geom_label(aes(label=day21$Diet), label.padding=unit(0.10, "lines"))  
+p <- p + ggtitle("Weight Gain by Chick (Points Labeled by Diet)") + theme(plot.title = element_text(hjust=0.5)) + ylab("Weight Gain")
+p
+# You can see that the highest/lowest gaining chicks and their diets are the same on the graph and numeric representation
+```
+
+##6.
+```{r}
+day0 <- complete[complete$Time == 0,] # using this to find heaviest and lightest starting weights
+heavy <- day0 %>% arrange(desc(weight))
+light <- day0 %>% arrange(weight)
+
+head(heavy, 1) # heaviest starting weight (Chick 3)
+head(light, 1) # lightest starting weight (Chick 27)
+
+avg <- complete %>% group_by(Time) %>% mutate(avgWeight = mean(weight)) %>% select(weight:Diet, avgWeight)
+avg$weight[avg$Chick == 1] <- avg$avgWeight[avg$Chick == 1] # Chick 1 is not used here, I replaced its weight values to avg values
+head(avg, 12)
+
+toGraph <- subset(avg, Chick == 1 | Chick == 3 | Chick == 27) # Subset data into what I need
+
+p <- ggplot(toGraph, aes(x=Time, y=weight, group=Chick)) + geom_line(aes(color=Chick)) + geom_point(aes(color=Chick))
+p <- p + theme_classic() + ylab("Weight")
+p <- p + ggtitle("Avg Weight Gain (Note Chick 1 = Avg Weight Gain)") + theme(plot.title = element_text(hjust=0.5))
+p
+```
+I find it odd here that both of the Chick 3 and Chick 27 lines are under the average line, which is marked by Chick 1. You can see that Chick 3, the highest starting weight, significantly drops in the first couple days.
+
+##7.
+I wanted a better representation of the weight gain, trying to see where the most weight was gained through the time the chick was growing.
+```{r}
+# Using the 'complete' data frame, where weightgain is an added column
+complete <- complete %>% group_by(Chick) %>% mutate(weightgain = (weight - weight[Time == 0]))
+complete <- complete %>% group_by(Time) %>% mutate(avgGain = mean(weightgain)) # created avg gain column
+
+# a density plot will give a good idea of the growth rate here
+p <- ggplot(complete, aes(x=avgGain)) + geom_density(color="darkblue", fill="lightblue")
+p <- p + ggtitle("Avg Weight Gain Density Plot") + theme(plot.title = element_text(hjust=0.5))
+p
+```
+You can see from this graph that the highest density growth rates are in the front end of growth, and they become less frequent as the weight approaches 150 grams. This tells me that the chicks really grow quickly right away, but slow down towards then end of the 21 day window.
